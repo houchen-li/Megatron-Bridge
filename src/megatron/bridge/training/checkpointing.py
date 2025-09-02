@@ -28,6 +28,12 @@ from typing import Any, Callable, Literal, Optional, Union
 
 import numpy as np
 import torch
+
+try:
+    import torch_musa
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import dist_checkpointing, mpu, tensor_parallel
 from megatron.core.dist_checkpointing.mapping import ShardedObject, ShardedStateDict
 from megatron.core.dist_checkpointing.serialization import (
@@ -310,9 +316,14 @@ def get_rng_state(data_parallel_random_init: bool) -> ShardedObject:
         "random_rng_state": random.getstate(),
         "np_rng_state": np.random.get_state(),
         "torch_rng_state": torch.get_rng_state(),
-        "cuda_rng_state": torch.cuda.get_rng_state(),
+        "cuda_rng_state": None,
         "rng_tracker_states": tensor_parallel.get_cuda_rng_tracker().get_states(),
     }
+
+    if torch.cuda.is_available():
+        rng_state["cuda_rng_state"] = torch.cuda.get_rng_state()
+    elif torch_musa is not None:
+        rng_state["cuda_rng_state"] = torch.musa.get_rng_state()
 
     rng_state_list = None
     if torch.distributed.is_initialized() and mpu.get_data_parallel_world_size() > 1 and data_parallel_random_init:
@@ -511,7 +522,6 @@ def save_checkpoint(
             async_sharded_save=ckpt_cfg.async_save,
             validate_access_integrity=validate_sharding_integrity,
             preprocess_common_before_consistancy_check=preprocess_common_state_dict_fn,
-            content_metadata=sharded_sd_metadata,
         )
         # [ModelOpt]: save sharded modelopt_state
         if has_nvidia_modelopt:
@@ -1232,7 +1242,10 @@ def _load_checkpoint_from_path(
                 random.setstate(rng_state["random_rng_state"])
                 np.random.set_state(rng_state["np_rng_state"])
                 torch.set_rng_state(rng_state["torch_rng_state"])
-                torch.cuda.set_rng_state(rng_state["cuda_rng_state"])
+                if torch.cuda.is_available():
+                    torch.cuda.set_rng_state(rng_state["cuda_rng_state"])
+                elif torch_musa is not None:
+                    torch.musa.set_rng_state(rng_state["musa_rng_state"])
                 # Check for empty states array
                 if not rng_state["rng_tracker_states"]:
                     raise KeyError
@@ -1241,7 +1254,10 @@ def _load_checkpoint_from_path(
                 random.setstate(state_dict["random_rng_state"])
                 np.random.set_state(state_dict["np_rng_state"])
                 torch.set_rng_state(state_dict["torch_rng_state"])
-                torch.cuda.set_rng_state(state_dict["cuda_rng_state"])
+                if torch.cuda.is_available():
+                    torch.cuda.set_rng_state(state_dict["cuda_rng_state"])
+                elif torch_musa is not None:
+                    torch.musa.set_rng_state(state_dict["musa_rng_state"])
                 # Check for empty states array
                 if not state_dict["rng_tracker_states"]:
                     raise KeyError
@@ -1270,7 +1286,10 @@ def _load_checkpoint_from_path(
     if not torch.distributed.is_initialized() or is_last_rank():
         wandb_utils.on_load_checkpoint_success(checkpoint_name, load_dir, state.wandb_logger)
 
-    torch.cuda.empty_cache()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif torch_musa is not None:
+        torch.musa.empty_cache()
 
     if state.train_state.step > 0:
         # Notify FT that a checkpoint was loaded.

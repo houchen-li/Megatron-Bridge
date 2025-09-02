@@ -17,6 +17,14 @@ from functools import partial
 from typing import Iterable
 
 import torch
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state
 from megatron.core.models.gpt import GPTModel
 from megatron.core.packed_seq_params import PackedSeqParams
@@ -178,17 +186,17 @@ def get_batch_on_this_tp_rank(
         tokens = torch.empty(
             (mbs, seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=current_device(),
         )
         labels = torch.empty(
             (mbs, seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=current_device(),
         )
         loss_mask = torch.empty(
             (mbs, seq_length),
             dtype=torch.float32,
-            device=torch.cuda.current_device(),
+            device=current_device(),
         )
         if isinstance(cfg.dataset, FinetuningDatasetConfig) or cfg.dataset.create_attention_mask:
             attention_mask = torch.empty(
@@ -199,14 +207,14 @@ def get_batch_on_this_tp_rank(
                     seq_length,
                 ),
                 dtype=torch.bool,
-                device=torch.cuda.current_device(),
+                device=current_device(),
             )
         else:
             attention_mask = None
         position_ids = torch.empty(
             (mbs, seq_length),
             dtype=torch.int64,
-            device=torch.cuda.current_device(),
+            device=current_device(),
         )
 
         if cfg.model.pipeline_model_parallel_size == 1:

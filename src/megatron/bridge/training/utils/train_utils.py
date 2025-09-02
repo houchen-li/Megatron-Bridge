@@ -20,6 +20,30 @@ from typing import Any, Callable, Optional, Union
 
 import torch
 import torch.nn as nn
+from torch.cuda import current_device
+from torch.cuda.memory import (
+    memory_stats,
+    memory_allocated,
+    max_memory_allocated,
+    memory_reserved,
+    max_memory_reserved,
+    _snapshot,
+)
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+    from torch_musa.core.memory import (
+        memory_stats,
+        memory_allocated,
+        max_memory_allocated,
+        memory_reserved,
+        max_memory_reserved,
+        _snapshot,
+    )
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state
 from megatron.core.num_microbatches_calculator import get_num_microbatches
 from megatron.core.tensor_parallel import param_is_not_tensor_parallel_duplicate
@@ -265,7 +289,7 @@ def reduce_max_stat_across_model_parallel_group(stat: Optional[float]) -> Option
     """
     if stat is None:
         stat = -1.0
-    stat = torch.tensor([stat], dtype=torch.float32, device=torch.cuda.current_device())
+    stat = torch.tensor([stat], dtype=torch.float32, device=current_device())
     torch.distributed.all_reduce(
         stat, op=torch.distributed.ReduceOp.MAX, group=parallel_state.get_model_parallel_group()
     )
@@ -288,7 +312,7 @@ def logical_and_across_model_parallel_group(input: bool) -> bool:
         input = 1
     else:
         input = 0
-    input = torch.tensor([input], dtype=torch.int, device=torch.cuda.current_device())
+    input = torch.tensor([input], dtype=torch.int, device=current_device())
     torch.distributed.all_reduce(
         input, op=torch.distributed.ReduceOp.MIN, group=parallel_state.get_model_parallel_group()
     )
@@ -411,7 +435,7 @@ def training_log(
     if writer and (iteration % logger_config.tensorboard_log_interval == 0):
         if config.profiling:
             if config.profiling.record_memory_history and is_last_rank():
-                snapshot = torch.cuda.memory._snapshot()
+                snapshot = _snapshot()
                 from pickle import dump
 
                 with open(config.profiling.memory_snapshot_path, "wb") as f:
@@ -468,7 +492,7 @@ def training_log(
             if wandb_writer:
                 wandb_writer.log({"params-norm": params_norm}, iteration)
         if logger_config.log_memory_to_tensorboard:
-            mem_stats = torch.cuda.memory_stats()
+            mem_stats = memory_stats()
             writer.add_scalar(
                 "mem-reserved-bytes",
                 mem_stats["reserved_bytes.all.current"],
@@ -602,10 +626,10 @@ def report_memory(name: str) -> None:
     """
     mega_bytes = 1024.0 * 1024.0
     string = name + " memory (MB)"
-    string += " | allocated: {}".format(torch.cuda.memory_allocated() / mega_bytes)
-    string += " | max allocated: {}".format(torch.cuda.max_memory_allocated() / mega_bytes)
-    string += " | reserved: {}".format(torch.cuda.memory_reserved() / mega_bytes)
-    string += " | max reserved: {}".format(torch.cuda.max_memory_reserved() / mega_bytes)
+    string += " | allocated: {}".format(memory_allocated() / mega_bytes)
+    string += " | max allocated: {}".format(max_memory_allocated() / mega_bytes)
+    string += " | reserved: {}".format(memory_reserved() / mega_bytes)
+    string += " | max reserved: {}".format(max_memory_reserved() / mega_bytes)
     if parallel_state.get_data_parallel_rank() == 0:
         print("[Rank {}] {}".format(torch.distributed.get_rank(), string), flush=True)
 

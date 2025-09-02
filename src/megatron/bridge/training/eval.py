@@ -17,6 +17,14 @@ import time
 from typing import Any, Callable, Optional, Union
 
 import torch
+from torch.cuda.memory import empty_cache
+
+try:
+    import torch_musa
+    from torch_musa.core.memory import empty_cache
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state
 from megatron.core.num_microbatches_calculator import get_num_microbatches
 from megatron.core.pipeline_parallel import get_forward_backward_func
@@ -107,7 +115,7 @@ def evaluate(
 
             # Empty unused memory
             if state.cfg.train.empty_unused_memory_level >= 1:
-                torch.cuda.empty_cache()
+                empty_cache()
 
             if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
                 # Reduce across processes.

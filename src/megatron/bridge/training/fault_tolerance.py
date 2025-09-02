@@ -55,6 +55,13 @@ import time
 from typing import List
 
 import torch
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
 
 from megatron.bridge.training.config import ConfigContainer, FaultToleranceConfig
 from megatron.bridge.training.state import GlobalState
@@ -270,7 +277,7 @@ def maybe_setup_simulated_fault(config: FaultToleranceConfig) -> None:
     rank = torch.distributed.get_rank()
     rand_rank = rng.randint(0, torch.distributed.get_world_size() - 1)
     rank_to_fail = rank_to_fail if rank_to_fail is not None else rand_rank
-    rank_to_fail = torch.tensor([rank_to_fail], device=torch.cuda.current_device())
+    rank_to_fail = torch.tensor([rank_to_fail], device=current_device())
     torch.distributed.broadcast(rank_to_fail, 0)
     rank_to_fail = int(rank_to_fail.item())
 

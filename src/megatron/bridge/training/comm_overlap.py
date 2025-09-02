@@ -567,12 +567,19 @@ class CommOverlapConfig:
         import os
 
         import torch
+        from torch.cuda import get_device_capability
+
+        try:
+            import torch_musa
+            from torch_musa.core.device import get_device_capability
+        except ModuleNotFoundError:
+            torch_musa = None
 
         tp_size = model_cfg.tensor_model_parallel_size
         cp_size = model_cfg.context_parallel_size
         dp_size = self.data_parallel_size
         pp_size = model_cfg.pipeline_model_parallel_size
-        major, _ = torch.cuda.get_device_capability()
+        major, _ = get_device_capability()
         if major > 9:
             if (tp_size > 1 or cp_size > 1) and (dp_size > 1 or pp_size > 1):
                 """

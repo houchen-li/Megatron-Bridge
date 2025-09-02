@@ -42,6 +42,13 @@ import os
 import sys
 
 import torch
+
+try:
+    import torch_musa
+    import musa_patch
+except ModuleNotFoundError:
+    torch_musa = None
+
 from rich.console import Console
 from rich.table import Table
 

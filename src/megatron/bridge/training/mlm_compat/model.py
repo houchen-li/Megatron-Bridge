@@ -15,8 +15,16 @@
 import argparse
 from typing import Optional
 
-import megatron.core.parallel_state as mpu
 import torch
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
+
+import megatron.core.parallel_state as mpu
 from megatron.core import tensor_parallel
 from megatron.core.enums import ModelType
 from megatron.core.fp8_utils import correct_amax_history_if_needed
@@ -235,7 +243,7 @@ def _get_model(
 
     if not args.init_model_with_meta_device:
         for model_module in model:
-            model_module.cuda(torch.cuda.current_device())
+            model_module.to(current_device())
 
     # Fp16 conversion.
     if args.fp16 or args.bf16:

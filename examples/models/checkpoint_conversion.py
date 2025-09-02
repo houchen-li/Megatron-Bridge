@@ -59,6 +59,12 @@ from typing import Optional
 
 import torch
 
+try:
+    import torch_musa
+    import musa_patch
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.bridge import AutoBridge
 
 

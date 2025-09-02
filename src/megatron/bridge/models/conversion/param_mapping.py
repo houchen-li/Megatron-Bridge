@@ -20,6 +20,14 @@ from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 import torch
 import torch.distributed
 import torch.nn as nn
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import mpu
 from megatron.core.fp8_utils import FP8_TENSOR_CLASS, HAVE_TE_FP8_TENSOR_CLASS
 from megatron.core.transformer.module import MegatronModule
@@ -296,7 +304,11 @@ class MegatronParamMapping(ABC, Generic[WeightType]):
         if tensor is None:
             shape, dtype, tensor_parallel, partition_dim = target_tensor_spec
             # Use CPU by default, unless CUDA is available
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cpu")
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+            elif torch_musa is not None:
+                device = torch.device("musa")
             tensor = torch.empty(shape, dtype=dtype, device=device)
             if tensor_parallel is not None:
                 tensor.tensor_model_parallel = tensor_parallel
@@ -817,8 +829,8 @@ class ReplicatedMapping(MegatronParamMapping[torch.Tensor]):
             return hf_weights
 
         # TODO(yuya): router.weight is on device cpu, need to check.
-        if target_device.index != torch.cuda.current_device():
-            hf_weights = hf_weights.to(torch.cuda.current_device())
+        if target_device.index != current_device():
+            hf_weights = hf_weights.to(current_device())
 
         # All ranks need the full weight
         if self.tp_rank > 0:

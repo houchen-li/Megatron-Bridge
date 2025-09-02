@@ -14,6 +14,14 @@
 
 
 import torch
+from torch.cuda import get_device_properties
+
+try:
+    import torch_musa
+    from torch_musa.core.device import get_device_properties
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core.transformer import TransformerConfig
 
 
@@ -26,5 +34,5 @@ def apply_deepep(model_config: TransformerConfig) -> None:
 
 def validate_deepep(model_config: TransformerConfig) -> None:
     """Validate DeepEP is supported for the current GPU architecture."""
-    if model_config.moe_enable_deepep and torch.cuda.get_device_properties(0).major not in (8, 9):
+    if model_config.moe_enable_deepep and get_device_properties(0).major not in (8, 9):
         raise ValueError("DeepEP is supported for Ampere (SM80) and Hopper (SM90) GPUs")

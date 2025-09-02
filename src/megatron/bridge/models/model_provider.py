@@ -32,6 +32,14 @@ except ImportError:
 from typing import Callable
 
 import torch
+from torch.cuda import set_device, current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import set_device, current_device
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.distributed import (
     DistributedDataParallel,
@@ -153,8 +161,8 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             os.environ["WORLD_SIZE"] = os.environ.get("WORLD_SIZE", "1")
             os.environ["MASTER_ADDR"] = os.environ.get("MASTER_ADDR", "localhost")
             os.environ["MASTER_PORT"] = os.environ.get("MASTER_PORT", "12355")
-            torch.cuda.set_device(get_local_rank_preinit())
-            torch.distributed.init_process_group("nccl")
+            set_device(get_local_rank_preinit())
+            torch.distributed.init_process_group("nccl" if torch_musa is None else "mccl")
 
         if not parallel_state.is_initialized():
             print("Model parallel not initialized, initializing...")
@@ -210,8 +218,8 @@ class ModelProviderMixin(abc.ABC, Generic[ModelT]):
             **model_parallel_kwargs: Additional arguments for `parallel_state.initialize_model_parallel`.
         """
         if not torch.distributed.is_initialized():
-            torch.cuda.set_device(get_local_rank_preinit())
-            torch.distributed.init_process_group("nccl")
+            set_device(get_local_rank_preinit())
+            torch.distributed.init_process_group("nccl" if torch_musa is None else "mccl")
 
         parallel_state.initialize_model_parallel(
             tensor_model_parallel_size=getattr(self, "tensor_model_parallel_size", 1),
@@ -526,7 +534,7 @@ def get_model(
     # in the fully_shard function of FSDP2 instead.
     if not (use_torch_fsdp2 and model_config.use_cpu_initialization) and not model_config.init_model_with_meta_device:
         for model_module in model:
-            model_module.cuda(torch.cuda.current_device())
+            model_module.to(current_device())
 
     if model_config.fp16 or model_config.bf16:
         model = [Float16Module(model_config, model_module) for model_module in model]

@@ -1,3 +1,17 @@
+To install use this package on Moore Threads MUSA environment, run:
+
+```bash
+git clone https://gitee.com/MooreThreadsNDA/Megatron-Bridge.git
+
+cd Megatron-Bridge
+
+pip install --no-cache-dir --upgrade transformers
+
+pip install --no-cache-dir --no-build-isolation .
+```
+
+---
+
 <div align="center">
 
 # Megatron Bridge

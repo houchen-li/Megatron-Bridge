@@ -21,6 +21,16 @@ from typing import Any, Callable, Optional, Union
 
 import torch
 import torch.profiler
+from torch.cuda import synchronize
+from torch.cuda.memory import empty_cache
+
+try:
+    import torch_musa
+    from torch_musa.core.device import synchronize
+    from torch_musa.memory import empty_cache
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state
 from megatron.core.distributed import DistributedDataParallel as DDP
 from megatron.core.num_microbatches_calculator import (
@@ -518,7 +528,7 @@ def train_step(
 
     # Empty unused memory.
     if train_config.empty_unused_memory_level >= 1:
-        torch.cuda.empty_cache()
+        empty_cache()
 
     # Update parameters.
     timers("optimizer", log_level=1).start(barrier=optim_config.barrier_with_L1_time)
@@ -544,7 +554,7 @@ def train_step(
 
     # Empty unused memory.
     if train_config.empty_unused_memory_level >= 2:
-        torch.cuda.empty_cache()
+        empty_cache()
 
     if parallel_state.is_pipeline_last_stage(ignore_virtual=True):
         # Average loss across microbatches.
@@ -602,7 +612,7 @@ def post_training_step_callbacks(
 
     # Bring CPU and GPU back in sync if on right iteration.
     if train_config.train_sync_interval and iteration % train_config.train_sync_interval == 0:
-        torch.cuda.synchronize()
+        synchronize()
 
     # Straggler detector.
     if config.straggler:
