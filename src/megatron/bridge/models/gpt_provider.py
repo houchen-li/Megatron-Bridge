@@ -20,6 +20,14 @@ from functools import partial
 from typing import Any, Callable, Literal, Optional, Union
 
 import torch
+from torch.cuda.streams import Stream
+
+try:
+    import torch_musa
+    from torch_musa.core.stream import Stream
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state
 from megatron.core.models.gpt import GPTModel as MCoreGPTModel
 from megatron.core.models.gpt.gpt_layer_specs import (
@@ -252,7 +260,7 @@ class GPTModelProvider(TransformerConfig, ModelProviderMixin[MCoreGPTModel]):
                         child.set_tensor_parallel_group(tp_group)
 
             if parallel_state.get_context_parallel_world_size() > 1:
-                cp_stream = torch.cuda.Stream()
+                cp_stream = Stream()
                 for index, child in enumerate(model.modules()):
                     if index == 0:
                         continue

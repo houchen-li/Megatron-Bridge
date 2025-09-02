@@ -17,6 +17,13 @@ import time
 from typing import Callable, Optional
 
 import torch
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
 
 from megatron.bridge.training.config import NVRxStragglerDetectionConfig
 from megatron.bridge.utils.import_utils import MISSING_NVRX_MSG
@@ -292,7 +299,7 @@ class NVRxStragglerDetectionManager:
 
     def _gather_flag_from_rank0(self, flag: bool) -> bool:
         """Broadcast a boolean flag from rank 0 to all ranks."""
-        flag_tensor = torch.tensor([1.0 if flag else 0.0], device=torch.cuda.current_device(), dtype=torch.float32)
+        flag_tensor = torch.tensor([1.0 if flag else 0.0], device=current_device(), dtype=torch.float32)
         torch.distributed.broadcast(flag_tensor, 0)
         return bool(flag_tensor.item() > 0.0)
 

@@ -18,6 +18,12 @@ from pathlib import Path
 from typing import Dict, Generic, List, Optional, TypeVar, Union
 
 import torch
+
+try:
+    import torch_musa
+except ModuleNotFoundError:
+    torch_musa = None
+
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -138,7 +144,13 @@ class PreTrainedCausalLM(PreTrainedBase, Generic[CausalLMType]):
             **kwargs: Additional arguments passed to from_pretrained methods
         """
         self._model_name_or_path = model_name_or_path
-        self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
+        self.device = "cpu"
+        if device is None:
+            self.device = device
+        elif torch.cuda.is_available():
+            self.device = "cuda"
+        elif torch_musa is not None:
+            self.device = "musa"
         self.torch_dtype = torch_dtype
         self.trust_remote_code = trust_remote_code
         super().__init__(**kwargs)

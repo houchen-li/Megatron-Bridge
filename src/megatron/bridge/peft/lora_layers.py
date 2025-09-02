@@ -17,13 +17,19 @@ from typing import Any, Literal, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
+
+try:
+    import torch_musa
+except ModuleNotFoundError:
+    torch_musa = None
+
 import transformer_engine.pytorch as te
 
 from megatron.bridge.peft.adapter_wrapper import AdapterWrapper
 from megatron.bridge.utils.import_utils import safe_import
 
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() or torch_musa is not None:
     bitsandbytes, HAVE_BNB = safe_import("bitsandbytes")
 else:
     bitsandbytes = None

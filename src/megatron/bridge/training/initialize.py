@@ -19,6 +19,16 @@ from typing import Callable, Optional
 import torch
 import torch.distributed
 import torch.nn.functional as F
+from torch.cuda.memory import empty_cache
+from torch.cuda import device_count, current_device, set_device
+
+try:
+    import torch_musa
+    from torch_musa.core.memory import empty_cache
+    from torch_musa.core.device import device_count, current_device, set_device
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import parallel_state, tensor_parallel
 from megatron.core.fusions.fused_bias_dropout import bias_dropout_add_fused_train
 from megatron.core.fusions.fused_bias_gelu import bias_gelu
@@ -61,7 +71,7 @@ def initialize_megatron(
 
     if not allow_no_cuda:
         # Make sure cuda is available.
-        assert torch.cuda.is_available(), "Megatron requires CUDA."
+        assert torch.cuda.is_available() or torch_musa is not None, "Megatron requires CUDA or MUSA."
 
     model_config = cfg.model
     dist_config = cfg.dist
@@ -157,7 +167,7 @@ def torch_dist_init(
         )
 
         if model_config.num_moe_experts is not None:
-            MoEAuxLossAutoScaler.set_loss_scale(torch.ones(1, device=torch.cuda.current_device()))
+            MoEAuxLossAutoScaler.set_loss_scale(torch.ones(1, device=current_device()))
 
     if skip_mpu_initialization:
         return None
@@ -320,7 +330,7 @@ def _initialize_distributed(
 ) -> None:
     """Initialize torch.distributed and core model parallel."""
 
-    device_count = torch.cuda.device_count()
+    device_count = device_count()
     if torch.distributed.is_initialized():
         if get_rank_safe() == 0:
             print(
@@ -335,9 +345,9 @@ def _initialize_distributed(
         # Manually set the device ids.
         if device_count > 0:
             if dist_config.external_gpu_device_mapping:
-                torch.cuda.set_device(0)
+                set_device(0)
             else:
-                torch.cuda.set_device(get_local_rank_preinit())
+                set_device(get_local_rank_preinit())
 
         # Call the init process
         init_process_group_kwargs = {
@@ -411,7 +421,7 @@ def _set_random_seed(
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    if torch.cuda.device_count() > 0:
+    if device_count() > 0:
         tensor_parallel.model_parallel_cuda_manual_seed(seed, te_rng_tracker, inference_rng_tracker)
 
 
@@ -483,4 +493,4 @@ def _warmup_jit_function(model_config: GPTModelProvider | T5ModelProvider, micro
         for _ in range(5):
             output = bias_dropout_add_fused_train([input, bias], residual, dropout_rate)
     del bias, input, residual, output
-    torch.cuda.empty_cache()
+    empty_cache()

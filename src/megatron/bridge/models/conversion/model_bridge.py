@@ -33,9 +33,6 @@ import torch
 from megatron.core import parallel_state
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.utils import (
-    get_pg_size,
-)
 from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from transformers.modeling_utils import PreTrainedModel
 
@@ -112,7 +109,7 @@ def _megatron_local_name_to_global(
     """Adjust layer number and expert number from local to global numbering."""
     # PP
     pp_group = parallel_state.get_pipeline_model_parallel_group()
-    if "layers." in param_name and get_pg_size(pp_group) > 1:
+    if "layers." in param_name and torch.distributed.is_initialized() and pp_group is not None:
         match = re.match(r"^(.+?\.layers\.\d+)", param_name)
         assert match is not None
         layer_prefix = match.group(1)
@@ -127,7 +124,7 @@ def _megatron_local_name_to_global(
 
     # EP
     ep_group = parallel_state.get_expert_model_parallel_group()
-    if ".mlp.experts.linear_fc" in param_name and get_pg_size(ep_group) > 1:
+    if ".mlp.experts.linear_fc" in param_name and torch.distributed.is_initialized() and pp_group is not None:
         num_experts = config.num_moe_experts
         num_experts_per_rank = num_experts // ep_group.size()
 

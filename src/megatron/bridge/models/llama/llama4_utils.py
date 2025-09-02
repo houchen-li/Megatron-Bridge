@@ -17,16 +17,14 @@ from typing import Optional, Tuple, Union
 import torch
 from einops import rearrange
 from megatron.core import parallel_state
-from megatron.core.inference.contexts import BaseInferenceContext
 from megatron.core.models.common.embeddings.rope_utils import apply_rotary_pos_emb
 from megatron.core.models.gpt.gpt_layer_specs import get_gpt_decoder_block_spec
 from megatron.core.packed_seq_params import PackedSeqParams
 from megatron.core.transformer.attention import SelfAttention as MCoreSelfAttention
 from megatron.core.transformer.spec_utils import ModuleSpec
-from megatron.core.transformer.torch_norm import L2Norm
-from megatron.core.utils import deprecate_inference_params, is_fa_min_version
 from torch import Tensor
 
+from megatron.bridge.utils.contexts import BaseInferenceContext
 
 try:
     from flashattn_hopper.flash_attn_interface import _flash_attn_forward
@@ -146,8 +144,8 @@ def get_llama4_layer_spec(config) -> ModuleSpec:
         }
         if config.qk_l2_norm and not is_nope_layer:
             # Use QK Norm
-            updated_layer_spec.submodules.self_attention.submodules.q_layernorm = L2Norm
-            updated_layer_spec.submodules.self_attention.submodules.k_layernorm = L2Norm
+            updated_layer_spec.submodules.self_attention.submodules.q_layernorm = torch.nn.RMSNorm
+            updated_layer_spec.submodules.self_attention.submodules.k_layernorm = torch.nn.RMSNorm
         else:
             updated_layer_spec.submodules.self_attention.submodules.q_layernorm = None
             updated_layer_spec.submodules.self_attention.submodules.k_layernorm = None
@@ -203,12 +201,7 @@ class Llama4SelfAttention(MCoreSelfAttention):
 
         """
 
-        inference_context = deprecate_inference_params(inference_context, inference_params)
-
-        if inference_context and inference_context.is_dynamic_batching():
-            assert (HAVE_FA3 and _flash_attn_forward is not None) or is_fa_min_version("2.7.3"), (
-                "flash attn verion v2.7.3 and above is required for dynamic batching."
-            )
+        inference_context = inference_params if inference_context is None and inference_params is not None else inference_context
 
         # hidden_states: [sq, b, h]
         if self.config.flash_decode and not self.training and inference_context is not None:

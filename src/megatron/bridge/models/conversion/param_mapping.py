@@ -20,13 +20,17 @@ from typing import Any, Dict, Generic, List, Optional, Tuple, TypeVar, Union
 import torch
 import torch.distributed
 import torch.nn as nn
+from torch.cuda import current_device
+
+try:
+    import torch_musa
+    from torch_musa.core.device import current_device
+except ModuleNotFoundError:
+    torch_musa = None
+
 from megatron.core import mpu
 from megatron.core.transformer.module import MegatronModule
 from megatron.core.transformer.transformer_config import TransformerConfig
-from megatron.core.utils import (
-    get_pg_rank,
-    get_pg_size,
-)
 
 from megatron.bridge.models.conversion.utils import get_module_and_param_from_name, remove_non_pickleables
 
@@ -111,42 +115,58 @@ class MegatronParamMapping(ABC, Generic[WeightType]):
     @property
     def tp_rank(self) -> int:
         """Get the tensor model parallel rank."""
-        return get_pg_rank(self.tp_group)
+        if not torch.distributed.is_initialized() or self.tp_group is None:
+            return 0
+        return self.tp_group.rank()
 
     @property
     def tp_size(self) -> int:
         """Get the tensor model parallel size."""
-        return get_pg_size(self.tp_group)
+        if not torch.distributed.is_initialized() or tp_group is None:
+            return 1
+        return tp_group.size()
 
     @property
     def pp_rank(self) -> int:
         """Get the pipeline model parallel rank."""
-        return get_pg_rank(self.pp_group)
+        if not torch.distributed.is_initialized() or self.pp_group is None:
+            return 0
+        return self.pp_group.rank()
 
     @property
     def pp_size(self) -> int:
         """Get the pipeline model parallel size."""
-        return get_pg_size(self.pp_group)
+        if not torch.distributed.is_initialized() or pp_group is None:
+            return 1
+        return pp_group.size()
 
     @property
     def ep_rank(self) -> int:
         """Get the expert model parallel rank."""
-        return get_pg_rank(self.ep_group)
+        if not torch.distributed.is_initialized() or self.ep_group is None:
+            return 0
+        return self.ep_group.rank()
 
     @property
     def ep_size(self) -> int:
         """Get the expert model parallel size."""
-        return get_pg_size(self.ep_group)
+        if not torch.distributed.is_initialized() or ep_group is None:
+            return 1
+        return ep_group.size()
 
     @property
     def etp_rank(self) -> int:
         """Get the expert tensor parallel rank."""
-        return get_pg_rank(self.etp_group)
+        if not torch.distributed.is_initialized() or self.etp_group is None:
+            return 0
+        return self.etp_group.rank()
 
     @property
     def etp_size(self) -> int:
         """Get the expert tensor parallel size."""
-        return get_pg_size(self.etp_group)
+        if not torch.distributed.is_initialized() or etp_group is None:
+            return 1
+        return etp_group.size()
 
     @property
     def is_expert(self) -> bool:
@@ -295,7 +315,11 @@ class MegatronParamMapping(ABC, Generic[WeightType]):
         if tensor is None:
             shape, dtype, tensor_parallel, partition_dim = target_tensor_spec
             # Use CPU by default, unless CUDA is available
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            device = torch.device("cpu")
+            if torch.cuda.is_available():
+                device = torch.device("cuda")
+            elif torch_musa is not None:
+                device = torch.device("musa")
             tensor = torch.empty(shape, dtype=dtype, device=device)
             if tensor_parallel is not None:
                 tensor.tensor_model_parallel = tensor_parallel
@@ -801,8 +825,8 @@ class ReplicatedMapping(MegatronParamMapping[torch.Tensor]):
             return hf_weights
 
         # TODO(yuya): router.weight is on device cpu, need to check.
-        if target_device.index != torch.cuda.current_device():
-            hf_weights = hf_weights.to(torch.cuda.current_device())
+        if target_device.index != current_device():
+            hf_weights = hf_weights.to(current_device())
 
         # All ranks need the full weight
         if self.tp_rank > 0:
